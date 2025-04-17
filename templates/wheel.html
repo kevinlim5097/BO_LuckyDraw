@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lucky Draw</title>
+  <style>
+    body { text-align: center; font-family: sans-serif; }
+    #gridContainer {
+      display: grid;
+      grid-template-columns: repeat(7, 80px);
+      grid-gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .gridItem {
+      width: 80px;
+      height: 80px;
+      background-color: lightgray;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      font-size: 14px;
+      border: 2px solid #444;
+      transition: box-shadow 0.2s ease; /* 添加 box-shadow 动画 */
+    }
+    .highlight {
+      background-color: gold;
+      animation: flash 1s infinite alternate;
+      box-shadow: 0 0 10px 5px gold; /* 添加发光边框效果 */
+    }
+    /* 定义闪烁动画 */
+    @keyframes flash {
+      0% {
+        background-color: gold;
+        box-shadow: 0 0 10px 5px gold;
+      }
+      50% {
+        background-color: yellow;
+        box-shadow: 0 0 15px 10px yellow;
+      }
+      100% {
+        background-color: gold;
+        box-shadow: 0 0 10px 5px gold;
+      }
+    }
+    .blackout { background-color: black !important; color: black !important; }
+
+    #overlay, #invoiceOverlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      color: white;
+      font-size: 24px;
+      z-index: 10;
+    }
+
+    #spinBtn {
+      margin-top: 20px;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      font-size: 18px;
+    }
+
+    #skipBtn, #continueBtn {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 18px;
+      display: none;
+    }
+
+    #invoiceOverlay {
+      z-index: 100;
+      background-color: rgba(0, 0, 0, 0.85);
+    }
+
+    #invoiceOverlay input {
+      padding: 10px;
+      font-size: 16px;
+    }
+
+    #invoiceOverlay button {
+      padding: 10px 20px;
+      margin-top: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Lucky Draw</h1>
+  <button id="spinBtn" disabled>Spin</button>
+  <div id="gridContainer"></div>
+
+  <!-- 遮罩层：倒数 + 奖品 -->
+  <div id="overlay">
+    <div id="countdown"></div>
+    <button id="skipBtn" onclick="endCountdown()">Skip</button>
+    <button id="continueBtn" onclick="continueNext()">Continue</button>
+  </div>
+
+  <!-- 遮罩层：填写 Invoice ID -->
+  <div id="invoiceOverlay">
+    <h2>Please Enter Invoice ID</h2>
+    <input type="text" id="invoiceInput" placeholder="e.g. INV123456" />
+    <button onclick="submitInvoice()">Submit</button>
+    <br>
+    <button onclick="settlement()">Settlement</button>
+  </div>
+
+  <audio id="spinSound" src="{{ url_for('static', filename='spin_sound.mp3') }}" preload="auto"></audio>
+
+  <script>
+    const gridContainer = document.getElementById("gridContainer");
+    const spinBtn = document.getElementById("spinBtn");
+    const overlay = document.getElementById("overlay");
+    const countdown = document.getElementById("countdown");
+    const skipBtn = document.getElementById("skipBtn");
+    const continueBtn = document.getElementById("continueBtn");
+    const spinSound = document.getElementById("spinSound");
+    const invoiceOverlay = document.getElementById("invoiceOverlay");
+
+    let items = [];
+    let currentIndex = 0;
+    let highlightInterval;
+    let countdownTimer;
+    let activeItems = [];
+    let currentInvoiceID = "";
+
+    async function fetchItems() {
+      const res = await fetch("/api/items");
+      items = await res.json();
+      activeItems = [...items];
+      renderGrid();
+    }
+
+    function renderGrid() {
+      gridContainer.innerHTML = "";
+      activeItems.forEach((item, index) => {
+        const div = document.createElement("div");
+        div.className = "gridItem";
+        div.innerText = item;
+        div.id = `item-${index}`;
+        gridContainer.appendChild(div);
+      });
+    }
+
+    async function startSpin() {
+      if (activeItems.length === 0) return;
+      spinBtn.disabled = true;
+      currentIndex = -1;
+      let highlightTime = 40;
+      let totalSpinTime = 5000;
+      let countdownStart = 2000;
+
+      spinSound.currentTime = 0;
+      spinSound.play();
+      setTimeout(() => {
+        spinSound.pause();
+        spinSound.currentTime = 0;
+      }, totalSpinTime);
+
+      highlightInterval = setInterval(() => {
+        highlightNext();
+      }, highlightTime);
+
+      setTimeout(() => {
+        showCountdown();
+      }, countdownStart);
+
+      setTimeout(() => {
+        clearInterval(highlightInterval);
+        finalizeWinner();
+      }, totalSpinTime);
+    }
+
+    function highlightNext() {
+      const itemsEl = document.querySelectorAll(".gridItem");
+      itemsEl.forEach(el => el.classList.remove("highlight")); // 移除之前的高亮
+
+      let attempts = 0;
+      do {
+        currentIndex = (currentIndex + 1) % itemsEl.length;
+        attempts++;
+      } while (itemsEl[currentIndex].classList.contains("blackout") && attempts < itemsEl.length);
+
+      console.log(`Highlighting item at index: ${currentIndex}`);
+      // 添加新的高亮效果
+      itemsEl[currentIndex].classList.add("highlight");
+    }
+
+    function showCountdown() {
+      let count = 3;
+      overlay.style.display = "flex";
+      countdown.innerText = `⏳ ${count} sec...`;
+      skipBtn.style.display = "none";
+      continueBtn.style.display = "none";
+
+      setTimeout(() => {
+        skipBtn.style.display = "inline-block";
+      }, 3000);
+
+      countdownTimer = setInterval(() => {
+        count--;
+        countdown.innerText = `⏳ ${count} sec...`;
+        if (count === 0) {
+          clearInterval(countdownTimer);
+          countdown.innerText = `🎉 You Get: ${activeItems[currentIndex]}`;
+          skipBtn.style.display = "none";
+          continueBtn.style.display = "inline-block";
+        }
+      }, 1000);
+    }
+
+    function endCountdown() {
+      clearInterval(countdownTimer);
+      countdown.innerText = `🎉 You Get: ${activeItems[currentIndex]}`;
+      skipBtn.style.display = "none";
+      continueBtn.style.display = "inline-block";
+    }
+
+    function continueNext() {
+        overlay.style.display = "none";
+        markWinner();
+        if (checkIfAllItemsDrawn()) {
+          settlement(); // Automatically go to settlement if all items are drawn
+        } else {
+          document.getElementById("invoiceInput").value = "";
+          invoiceOverlay.style.display = "flex";
+          spinBtn.disabled = true;
+        }
+
+        // 停止闪烁效果
+        const itemsEl = document.querySelectorAll(".gridItem");
+        itemsEl.forEach(el => el.classList.remove("highlight"));
+      }
+
+    function markWinner() {
+      const winnerEl = document.getElementById(`item-${currentIndex}`);
+      const prize = activeItems[currentIndex];
+      if (winnerEl) winnerEl.classList.add("blackout");
+      fetch("/api/win", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice: currentInvoiceID,
+          item: prize
+        })
+      });
+    }
+
+    // Check if all items have been drawn
+    function checkIfAllItemsDrawn() {
+      const itemsEl = document.querySelectorAll(".gridItem");
+      return Array.from(itemsEl).every(el => el.classList.contains("blackout"));
+    }
+
+    function submitInvoice() {
+      const input = document.getElementById("invoiceInput").value.trim();
+      if (!input) return alert("Invoice ID cannot be empty");
+      currentInvoiceID = input;
+      invoiceOverlay.style.display = "none";
+      spinBtn.disabled = false;
+    }
+
+    function settlement() {
+      window.location.href = "/admin?tab=history"; // Navigate to the settlement page
+    }
+
+    spinBtn.addEventListener("click", startSpin);
+    fetchItems().then(() => {
+      invoiceOverlay.style.display = "flex"; // ✅ 显示填写 Invoice 的遮罩层
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin - Lucky Wheel</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background-color: #f4f4f4;
+    }
+    input, button {
+      padding: 8px;
+      font-size: 14px;
+    }
+    #control {
+      margin-bottom: 20px;
+    }
+    .delete-btn {
+      background-color: #e74c3c;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    #history-section {
+      margin-top: 30px;
+    }
+    .tab-button {
+      padding: 10px;
+      cursor: pointer;
+      margin-right: 10px;
+      background-color: #f4f4f4;
+      border: 1px solid #ccc;
+    }
+    .tab-button.active {
+      background-color: #ddd;
+    }
+    .history-table {
+      display: none;
+      margin-top: 20px;
+      width: 100%;
+    }
+    .history-table.active {
+      display: table;
+    }
+    .date-picker {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Item Manager</h1>
+  <div id="control">
+    <input type="text" id="itemInput" placeholder="Enter item">
+    <button onclick="addItem()">Add</button>
+    <a href="/run">Start Lucky Draw</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="itemTableBody"></tbody>
+  </table>
+
+  <!-- History Section -->
+  <div id="history-section">
+    <button class="tab-button active" onclick="showTab('history')">History</button>
+    <button class="tab-button" onclick="showTab('items')">Items</button>
+
+    <!-- Date Picker and Show Button -->
+    <div id="historyTab" class="history-table active">
+      <div class="date-picker">
+        <input type="date" id="historyDate">
+        <button onclick="fetchHistory()">Show</button>
+      </div>
+      <table id="historyTable">
+        <thead>
+          <tr>
+            <th>Invoice</th>
+            <th>Prize</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody id="historyTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Item management
+    async function fetchItems() {
+      const res = await fetch("/api/items");
+      const items = await res.json();
+      const tbody = document.getElementById("itemTableBody");
+      tbody.innerHTML = "";
+      items.forEach(item => {
+        const tr = document.createElement("tr");
+        const tdItem = document.createElement("td");
+        tdItem.textContent = item;
+        const tdAction = document.createElement("td");
+        const delBtn = document.createElement("button");
+        delBtn.textContent = "Delete";
+        delBtn.className = "delete-btn";
+        delBtn.onclick = async () => {
+          const res = await fetch(`/api/items/${encodeURIComponent(item)}`, {
+            method: "DELETE"
+          });
+
+          if (res.ok) {
+            tr.remove(); // Remove current row
+          } else {
+            const errorText = await res.text();
+            alert(`Failed to delete item: ${errorText}`);
+          }
+        };
+        tdAction.appendChild(delBtn);
+        tr.appendChild(tdItem);
+        tr.appendChild(tdAction);
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function addItem() {
+      const input = document.getElementById("itemInput");
+      const value = input.value.trim();
+      if (value) {
+        await fetch("/api/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ item: value })
+        });
+        input.value = "";
+        fetchItems();
+      }
+    }
+
+    async function fetchHistory() {
+      const date = document.getElementById("historyDate").value;
+      if (date) {
+        const res = await fetch(`/api/history/by-date?date=${date}`);
+        const history = await res.json();
+        const tbody = document.getElementById("historyTableBody");
+        tbody.innerHTML = "";
+        history.forEach(entry => {
+          const tr = document.createElement("tr");
+          const tdInvoice = document.createElement("td");
+          tdInvoice.textContent = entry.invoice;
+          const tdPrize = document.createElement("td");
+          tdPrize.textContent = entry.prize;
+          const tdTimestamp = document.createElement("td");
+          tdTimestamp.textContent = entry.timestamp;
+          tr.appendChild(tdInvoice);
+          tr.appendChild(tdPrize);
+          tr.appendChild(tdTimestamp);
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    function showTab(tab) {
+      const historyTab = document.getElementById("historyTab");
+      const itemsTab = document.getElementById("itemTableBody");
+
+      if (tab === "history") {
+        historyTab.classList.add("active");
+        itemsTab.classList.remove("active");
+        document.querySelector('.tab-button.active').classList.remove('active');
+        document.querySelector('.tab-button:nth-child(1)').classList.add('active');
+      } else {
+        historyTab.classList.remove("active");
+        itemsTab.classList.add("active");
+        document.querySelector('.tab-button.active').classList.remove('active');
+        document.querySelector('.tab-button:nth-child(2)').classList.add('active');
+      }
+    }
+
+    fetchItems();
+  </script>
+</body>
+</html>
