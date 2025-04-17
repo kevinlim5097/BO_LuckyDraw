@@ -23,7 +23,7 @@ def save_data(data):
 @app.route("/")
 @app.route("/admin")
 def admin():
-    return render_template("admin.html")
+    return render_template("index.html")
 
 @app.route("/run")
 def run_wheel():
